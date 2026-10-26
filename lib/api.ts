@@ -232,4 +232,6 @@ export const wave1Api = {
 export const wave2Api = {
   setOptionsEnabled: (projectId: string, entityId: string, enabled: boolean) =>
     api.post(`/ai/${projectId}/${entityId}/options-choice`, { enabled }),
+  setSwotBEnabled: (projectId: string, entityId: string, enabled: boolean) =>
+    api.post(`/ai/${projectId}/${entityId}/options-choice`, { enabled, step: 'swotB' }),
 }

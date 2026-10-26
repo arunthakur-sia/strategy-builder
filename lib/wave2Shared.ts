@@ -21,6 +21,9 @@ export type Wave2AgentId = typeof WAVE2_ORDER[number]
 /** The two agents inside the diagram's "3. Strategic Options (Optional)" group. */
 export const WAVE2_OPTIONAL: string[] = ['optionsDesign', 'optionsEval']
 
+/** SWOT Part B is also optional (its own on/off switch); skipping it drops it from Shift Agenda's inputs. */
+export const WAVE2_SWOTB_OPTIONAL: string[] = ['swotB']
+
 export const WAVE2_LABELS: Record<string, string> = {
   direction: '1. Strategic Direction',
   vmv: '2. V/M/V — vision, mission & values',
@@ -59,17 +62,27 @@ export function wave2OptionsEnabled(assessment: any): boolean {
   return assessment?.wave2?.optionsEnabled !== false
 }
 
-/** Dependencies for one agent given whether the optional options step is in play. Skipping the step drops
- *  optionsDesign/optionsEval from every consumer's inputs (the bypass lines in the diagram). */
-export function wave2DepIds(agentId: string, optionsEnabled: boolean): string[] {
-  const inputs = WAVE2_INPUTS[agentId] || []
-  return optionsEnabled ? [...inputs] : inputs.filter(id => !WAVE2_OPTIONAL.includes(id))
+/** Undecided (null) behaves like true — SWOT Part B is on the diagram's default path. */
+export function wave2SwotBEnabled(assessment: any): boolean {
+  return assessment?.wave2?.swotBEnabled !== false
+}
+
+/** Agent ids that are switched off given the two optional-step choices. */
+export function wave2SkippedIds(optionsEnabled: boolean, swotBEnabled: boolean): string[] {
+  return [...(optionsEnabled ? [] : WAVE2_OPTIONAL), ...(swotBEnabled ? [] : WAVE2_SWOTB_OPTIONAL)]
+}
+
+/** Dependencies for one agent given which optional steps are in play. Skipping a step drops its agents
+ *  from every consumer's inputs (the bypass lines in the diagram). */
+export function wave2DepIds(agentId: string, optionsEnabled: boolean, swotBEnabled = true): string[] {
+  const skipped = wave2SkippedIds(optionsEnabled, swotBEnabled)
+  return (WAVE2_INPUTS[agentId] || []).filter(id => !skipped.includes(id))
 }
 
 /** The agents that actually participate, in diagram order. */
 export function wave2Sequence(assessment: any): string[] {
-  const enabled = wave2OptionsEnabled(assessment)
-  return WAVE2_ORDER.filter(id => enabled || !WAVE2_OPTIONAL.includes(id))
+  const skipped = wave2SkippedIds(wave2OptionsEnabled(assessment), wave2SwotBEnabled(assessment))
+  return WAVE2_ORDER.filter(id => !skipped.includes(id))
 }
 
 function agentOf(assessment: any, id: string): any {
@@ -96,18 +109,18 @@ export function wave2DownstreamStarted(assessment: any, id: string): boolean {
 /**
  * Moves untouched Wave 2 agents between 'locked' and 'not_started' as their dependencies are approved
  * (or un-approved — unlocking SWOT Part A re-locks anything that hasn't started on top of it), and marks the
- * optional options agents 'skipped' while that step is switched off. Never touches an agent that has
+ * optional agents (options, SWOT Part B) 'skipped' while switched off. Never touches an agent that has
  * started, and never auto-runs anything — a human still has to send the first message.
  */
 export function recomputeWave2Locks(assessment: any) {
   const wave2 = assessment?.wave2
   if (!wave2?.agents) return
-  const enabled = wave2OptionsEnabled(assessment)
+  const skipped = wave2SkippedIds(wave2OptionsEnabled(assessment), wave2SwotBEnabled(assessment))
   for (const id of WAVE2_ORDER) {
     const agent = wave2.agents[id]
     if (!agent) continue
     const untouched = !agent.chatHistory?.length && agent.approvedVersion === null
-    if (!enabled && WAVE2_OPTIONAL.includes(id)) {
+    if (skipped.includes(id)) {
       if (untouched) agent.status = 'skipped'
       continue
     }

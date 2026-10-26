@@ -84,6 +84,8 @@ interface EntityAssessment {
   wave2: {
     /** null until the reviewer answers; behaves like true. false skips the optional strategic-options step. */
     optionsEnabled: boolean | null
+    /** null until the reviewer answers; behaves like true. false skips the optional SWOT Part B step. */
+    swotBEnabled: boolean | null
     agents: Record<string, NarrativeAgent>
   }
 }

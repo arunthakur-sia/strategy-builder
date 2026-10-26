@@ -8,7 +8,7 @@ import {
 } from './wave1Engine'
 import {
   WAVE2_ORDER, WAVE2_LABELS, WAVE2_INPUTS, WAVE2_USES_DOCS, WAVE2_OPTIONAL,
-  isWave2AgentId, wave2OptionsEnabled, wave2DepIds, wave2DownstreamStarted, recomputeWave2Locks,
+  isWave2AgentId, wave2OptionsEnabled, wave2SwotBEnabled, wave2SkippedIds, wave2DepIds, wave2DownstreamStarted, recomputeWave2Locks,
 } from '../wave2Shared'
 
 export const WAVE2_AGENT_IDS: string[] = [...WAVE2_ORDER]
@@ -64,7 +64,21 @@ export function setWave2OptionsEnabled(entity: any, value: boolean) {
   const downstreamStarted = ['swotB', 'shiftAgenda'].some(id => wave2.agents[id].chatHistory?.length)
   if (downstreamStarted) throw new Error('Steps after the strategic options have already started — this choice can no longer be changed.')
   wave2.optionsEnabled = value
-  for (const id of WAVE2_ORDER) wave2.agents[id].depIds = wave2DepIds(id, value)
+  for (const id of WAVE2_ORDER) wave2.agents[id].depIds = wave2DepIds(id, value, wave2SwotBEnabled(entity.assessment))
+  recomputeWave2Locks(entity.assessment)
+}
+
+/**
+ * Records whether the reviewer wants the optional SWOT Part B step. false skips it and the Shift Agenda
+ * runs without it; blocked once SWOT Part B or the Shift Agenda has started.
+ */
+export function setWave2SwotBEnabled(entity: any, value: boolean) {
+  const wave2 = entity.assessment.wave2
+  if (value === wave2SwotBEnabled(entity.assessment)) { wave2.swotBEnabled = value; recomputeWave2Locks(entity.assessment); return }
+  const started = ['swotB', 'shiftAgenda'].some(id => wave2.agents[id].chatHistory?.length || wave2.agents[id].versionHistory?.length)
+  if (started) throw new Error('SWOT Part B or the Shift Agenda has already started — this choice can no longer be changed.')
+  wave2.swotBEnabled = value
+  for (const id of WAVE2_ORDER) wave2.agents[id].depIds = wave2DepIds(id, wave2OptionsEnabled(entity.assessment), value)
   recomputeWave2Locks(entity.assessment)
 }
 
@@ -83,8 +97,8 @@ export async function runWave2Agent(
     throw new Error(`The "${WAVE2_LABELS[agentId]}" assistant isn't configured — set ${WAVE2_ENV_VARS[agentId]} in the environment.`)
   }
 
-  const enabled = wave2OptionsEnabled(entity.assessment)
-  const upstream = WAVE2_INPUTS[agentId].filter(id => enabled || !WAVE2_OPTIONAL.includes(id))
+  const skipped = wave2SkippedIds(wave2OptionsEnabled(entity.assessment), wave2SwotBEnabled(entity.assessment))
+  const upstream = WAVE2_INPUTS[agentId].filter(id => !skipped.includes(id))
   const inputs = upstream.map(id => ({ label: inputLabel(id), text: approvedText(entity, id) }))
   let prompt = buildWave2Prompt(entity, WAVE2_LABELS[agentId], inputs)
   const collectionIds = WAVE2_USES_DOCS[agentId] && entity.siagptCollectionId ? [entity.siagptCollectionId] : []

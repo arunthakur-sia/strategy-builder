@@ -1,7 +1,7 @@
 import 'server-only'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from './db'
-import { WAVE2_ORDER, wave2DepIds, wave2OptionsEnabled, recomputeWave2Locks } from '../wave2Shared'
+import { WAVE2_ORDER, wave2DepIds, wave2OptionsEnabled, wave2SwotBEnabled, recomputeWave2Locks } from '../wave2Shared'
 
 export function createPillar(id: string, name: string, description: string, elementNames: string[], depIds: string[] = []) {
   return {
@@ -66,7 +66,7 @@ export function createExternalAgents() {
 export function createWave2State() {
   const agents: Record<string, any> = {}
   for (const id of WAVE2_ORDER) agents[id] = createNarrativeAgent(id, wave2DepIds(id, true))
-  return { optionsEnabled: null as boolean | null, agents }
+  return { optionsEnabled: null as boolean | null, swotBEnabled: null as boolean | null, agents }
 }
 
 export function createSwotAgentGate(pillarIds: string[]) {
@@ -266,11 +266,13 @@ function backfillWave2(assessment: any) {
   if (!assessment.wave2) assessment.wave2 = createWave2State()
   const wave2 = assessment.wave2
   if (wave2.optionsEnabled === undefined) wave2.optionsEnabled = null
+  if (wave2.swotBEnabled === undefined) wave2.swotBEnabled = null
   if (!wave2.agents) wave2.agents = {}
   const enabled = wave2OptionsEnabled(assessment)
+  const swotB = wave2SwotBEnabled(assessment)
   for (const id of WAVE2_ORDER) {
     if (!wave2.agents[id]) wave2.agents[id] = createNarrativeAgent(id, wave2DepIds(id, true))
-    wave2.agents[id].depIds = wave2DepIds(id, enabled)
+    wave2.agents[id].depIds = wave2DepIds(id, enabled, swotB)
   }
   recomputeWave2Locks(assessment)
 }

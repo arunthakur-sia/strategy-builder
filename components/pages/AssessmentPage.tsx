@@ -17,7 +17,7 @@ import {
   PILLAR_ORDER, FANOUT_ORDER, wave1Total, mainEntityAdapter, idiPathEnabled, wave1Sequence,
   getAgentObj, agentLabel, isApproved, buildCitationMaps, hasVersion, canUnlock, wave1ApprovedCount, statusMeta, defaultKickoffMessage,
 } from '@/lib/wave1Client'
-import { wave2Sequence, wave2OptionsEnabled, isWave2AgentId, WAVE2_OPTIONAL } from '@/lib/wave2Shared'
+import { wave2Sequence, wave2OptionsEnabled, wave2SwotBEnabled, isWave2AgentId, WAVE2_OPTIONAL } from '@/lib/wave2Shared'
 
 function fmtScore(n: number | null | undefined): string {
   return n == null ? '—' : n.toFixed(1)
@@ -834,19 +834,21 @@ function wave2WaitingOn(entity: any, id: string): string[] {
     .map((d: string) => d === 'swot' ? 'SWOT Part A (Wave 1)' : agentLabel(entity, d))
 }
 
-function OptionsChoicePrompt({ project, entity, onChanged }: { project: any; entity: any; onChanged: () => Promise<void> }) {
+function OptionsChoicePrompt({ project, entity, onChanged, step = 'options' }: { project: any; entity: any; onChanged: () => Promise<void>; step?: 'options' | 'swotB' }) {
   const [busy, setBusy] = useState(false)
-  const choice: boolean | null = entity.assessment.wave2.optionsEnabled
-  const enabled = wave2OptionsEnabled(entity.assessment)
+  const isSwotB = step === 'swotB'
+  const choice: boolean | null = isSwotB ? entity.assessment.wave2.swotBEnabled ?? null : entity.assessment.wave2.optionsEnabled
+  const enabled = isSwotB ? wave2SwotBEnabled(entity.assessment) : wave2OptionsEnabled(entity.assessment)
   const agents = entity.assessment.wave2.agents
-  // Same lock as the server's setWave2OptionsEnabled: once the options step or anything after it has begun,
-  // the choice is final.
-  const locked = [...WAVE2_OPTIONAL, 'swotB', 'shiftAgenda'].some(id => agents[id].chatHistory?.length || agents[id].versionHistory?.length)
+  // Same lock as the server's setWave2OptionsEnabled / setWave2SwotBEnabled: once the step or anything after it
+  // has begun, the choice is final.
+  const lockIds = isSwotB ? ['swotB', 'shiftAgenda'] : [...WAVE2_OPTIONAL, 'swotB', 'shiftAgenda']
+  const locked = lockIds.some(id => agents[id].chatHistory?.length || agents[id].versionHistory?.length)
 
   async function choose(value: boolean) {
     setBusy(true)
     try {
-      await wave2Api.setOptionsEnabled(project.id, entity.id, value)
+      await (isSwotB ? wave2Api.setSwotBEnabled : wave2Api.setOptionsEnabled)(project.id, entity.id, value)
       await onChanged()
     } catch (e: any) { alert('Failed to save: ' + (e.response?.data?.error || e.message)) }
     setBusy(false)
@@ -856,11 +858,12 @@ function OptionsChoicePrompt({ project, entity, onChanged }: { project: any; ent
     return (
       <div style={{ padding: '14px', borderRadius: 'var(--radius)', background: 'rgba(0,222,204,0.05)', border: '1px solid rgba(0,222,204,0.25)' }}>
         <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--sia-navy)', marginBottom: '4px' }}>
-          Do you want to run the optional strategic options step?
+          {isSwotB ? 'Do you want to run the optional SWOT Part B step?' : 'Do you want to run the optional strategic options step?'}
         </div>
         <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginBottom: '10px' }}>
-          Yes runs Strategic Options Design → Strategic Options Evaluation & Selection before SWOT Part B. No skips
-          both — SWOT Part B and the Shift Agenda run straight off Strategic Direction, V/M/V and SWOT Part A.
+          {isSwotB
+            ? 'Yes runs SWOT Part B before the Shift Agenda. No skips it — the Shift Agenda runs without it.'
+            : 'Yes runs Strategic Options Design → Strategic Options Evaluation & Selection before SWOT Part B. No skips both — SWOT Part B and the Shift Agenda run straight off Strategic Direction, V/M/V and SWOT Part A.'}
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => choose(true)}>
@@ -876,7 +879,7 @@ function OptionsChoicePrompt({ project, entity, onChanged }: { project: any; ent
 
   return (
     <div style={{ fontSize: '11px', color: 'var(--sia-medium-gray)' }}>
-      Strategic options step: <strong>{enabled ? 'included' : 'skipped'}</strong>
+      {isSwotB ? 'SWOT Part B step' : 'Strategic options step'}: <strong>{enabled ? 'included' : 'skipped'}</strong>
       {!locked && (
         <>
           {' · '}
@@ -897,6 +900,8 @@ function FormulationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
   onQuickRun: (id: string) => void; runningIds: Set<string>
 }) {
   const enabled = wave2OptionsEnabled(entity.assessment)
+  const swotBEnabled = wave2SwotBEnabled(entity.assessment)
+  const swotBChosen = entity.assessment.wave2.swotBEnabled != null
   const swotApproved = isApproved(entity, 'swot')
   const row = (id: string, extra?: { gate?: boolean; optional?: boolean }) => (
     <AgentRow projectId={project.id}
@@ -949,10 +954,16 @@ function FormulationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
       <div className="card fade-in" style={{ padding: '16px 18px' }}>
         <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--sia-navy)' }}>Consolidation</div>
         <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginBottom: '14px' }}>
-          SWOT Part B re-assesses the position given the direction{enabled ? ' and selected options' : ''}; the Shift Agenda closes the wave.
+          SWOT Part B (optional) re-assesses the position given the direction{enabled ? ' and selected options' : ''}; the Shift Agenda closes the wave.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {row('swotB')}
+          <OptionsChoicePrompt project={project} entity={entity} onChanged={onChanged} step="swotB" />
+          {swotBChosen && row('swotB', { optional: true })}
+          {swotBChosen && !swotBEnabled && (
+            <div style={{ fontSize: '11px', color: 'var(--sia-medium-gray)' }}>
+              Skipped — the Shift Agenda doesn't wait on SWOT Part B.
+            </div>
+          )}
           {row('shiftAgenda', { gate: true })}
         </div>
       </div>
