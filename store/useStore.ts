@@ -88,6 +88,28 @@ interface EntityAssessment {
     swotBEnabled: boolean | null
     agents: Record<string, NarrativeAgent>
   }
+  /** Wave 3 (Translation) — see lib/wave3Shared.ts for the agent ids and dependency edges. */
+  wave3: {
+    /** Optional SiaGPT collection of finance documents (feeds KPIs); '' until the first upload. */
+    financeCollectionId: string
+    /** Optional SiaGPT collection of functional & operations documents (feeds Initiatives and Prioritisation). */
+    functionalCollectionId: string
+    agents: Record<string, NarrativeAgent>
+    /** Step 5: structured dashboard data (shape: lib/wave3Dashboard.ts) generated from the agents' conversations. */
+    dashboard: {
+      status: 'locked' | 'not_started' | 'in_progress' | 'complete'
+      depIds: string[]
+      data: any | null
+      version: number
+      generatedAt: string | null
+      instructions: { content: string; at: string }[]
+      pendingMessage: { content: string; at: string } | null
+      lastError: { message: string; at: string } | null
+      approvedVersion: number | null
+      approvedAt: string | null
+      approvedBy: string | null
+    }
+  }
 }
 
 export interface SubsidiaryEntity {

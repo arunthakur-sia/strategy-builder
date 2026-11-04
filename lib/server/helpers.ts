@@ -2,6 +2,7 @@ import 'server-only'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from './db'
 import { WAVE2_ORDER, wave2DepIds, wave2OptionsEnabled, wave2SwotBEnabled, recomputeWave2Locks } from '../wave2Shared'
+import { WAVE3_ORDER, WAVE3_INPUTS, WAVE3_DASHBOARD_INPUTS, recomputeWave3Locks } from '../wave3Shared'
 
 export function createPillar(id: string, name: string, description: string, elementNames: string[], depIds: string[] = []) {
   return {
@@ -69,6 +70,27 @@ export function createWave2State() {
   return { optionsEnabled: null as boolean | null, swotBEnabled: null as boolean | null, agents }
 }
 
+/** Wave 3 (Translation): four narrative agents plus the dashboard (step 5), which isn't a SiaGPT agent — it
+ *  holds the structured JSON the report LLM produced from the agents' conversations. financeCollectionId /
+ *  functionalCollectionId are the optional document collections (created on first upload) feeding KPIs and
+ *  Initiatives + Prioritisation respectively. */
+export function createWave3Dashboard() {
+  return {
+    status: 'locked' as string, depIds: [...WAVE3_DASHBOARD_INPUTS],
+    data: null as any, version: 0, generatedAt: null as string | null,
+    instructions: [] as { content: string; at: string }[],
+    pendingMessage: null as { content: string; at: string } | null,
+    lastError: null as { message: string; at: string } | null,
+    approvedVersion: null as number | null, approvedAt: null as string | null, approvedBy: null as string | null,
+  }
+}
+
+export function createWave3State() {
+  const agents: Record<string, any> = {}
+  for (const id of WAVE3_ORDER) agents[id] = createNarrativeAgent(id, [...WAVE3_INPUTS[id]])
+  return { financeCollectionId: '', functionalCollectionId: '', agents, dashboard: createWave3Dashboard() }
+}
+
 export function createSwotAgentGate(pillarIds: string[]) {
   return {
     status: 'locked' as const,
@@ -97,6 +119,7 @@ export function createDefaultEntityAssessment() {
     externalAgents: createExternalAgents(),
     swotAgent: createSwotAgentGate(PILLAR_IDS),
     wave2: createWave2State(),
+    wave3: createWave3State(),
     // Whether the reviewer has documents to seed an IDI interview guide from — null until they answer the
     // yes/no prompt. null behaves like true (see idiPathEnabled in wave1Client) so existing entities are
     // unaffected. false skips idiGuide/idiSynth entirely; external analysis then runs straight off company
@@ -257,6 +280,7 @@ function backfillEntityAssessmentShape(assessment: any) {
   }
   if (assessment.pillars) backfillWave1DepIds(assessment)
   backfillWave2(assessment)
+  backfillWave3(assessment)
 }
 
 /** Entities created before Wave 2 shipped have no assessment.wave2. Add it (and any individual agent that's
@@ -275,6 +299,21 @@ function backfillWave2(assessment: any) {
     wave2.agents[id].depIds = wave2DepIds(id, enabled, swotB)
   }
   recomputeWave2Locks(assessment)
+}
+
+/** Entities created before Wave 3 shipped have no assessment.wave3. Add it (and any missing agent), re-derive
+ *  every depIds from the diagram table and release agents whose upstream approvals are already satisfied. */
+function backfillWave3(assessment: any) {
+  if (!assessment.wave3) assessment.wave3 = createWave3State()
+  const wave3 = assessment.wave3
+  if (typeof wave3.financeCollectionId !== 'string') wave3.financeCollectionId = ''
+  if (typeof wave3.functionalCollectionId !== 'string') wave3.functionalCollectionId = ''
+  if (!wave3.agents) wave3.agents = {}
+  for (const id of WAVE3_ORDER) {
+    if (!wave3.agents[id]) wave3.agents[id] = createNarrativeAgent(id, [...WAVE3_INPUTS[id]])
+  }
+  if (!wave3.dashboard) wave3.dashboard = createWave3Dashboard()
+  recomputeWave3Locks(assessment)
 }
 
 function backfillWave1Shape(project: any) {

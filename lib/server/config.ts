@@ -21,6 +21,14 @@ export const WAVE2_ENV_VARS: Record<string, string> = {
   shiftAgenda: 'SIAGPT_ASSISTANT_W2_SHIFT_AGENDA',
 }
 
+/** Env var that supplies each Wave 3 assistant id (step 5, the dashboard, has no assistant — it uses the report LLM). */
+export const WAVE3_ENV_VARS: Record<string, string> = {
+  strategyMap: 'SIAGPT_ASSISTANT_W3_STRATEGY_MAP',
+  kpis: 'SIAGPT_ASSISTANT_W3_KPIS',
+  initiatives: 'SIAGPT_ASSISTANT_W3_INITIATIVES',
+  prioritisation: 'SIAGPT_ASSISTANT_W3_PRIORITISATION',
+}
+
 export const config = {
   sessionSecret: process.env.SESSION_SECRET || 'sia-dev-secret-change-in-production',
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -80,8 +88,15 @@ export const config = {
     swotB:         process.env.SIAGPT_ASSISTANT_W2_SWOT_B              || '',
     shiftAgenda:   process.env.SIAGPT_ASSISTANT_W2_SHIFT_AGENDA        || '',
   } as Record<string, string>,
-  // LiteLLM gateway (OpenAI-compatible) — used only to turn an approved agent conversation into an
-  // exportable report; independent of the SiaGPT agents above.
+  // Wave 3 (Translation) agents — one SiaGPT assistant per agent node in the Wave 3 flow diagram.
+  wave3AssistantIds: {
+    strategyMap:    process.env.SIAGPT_ASSISTANT_W3_STRATEGY_MAP    || '',
+    kpis:           process.env.SIAGPT_ASSISTANT_W3_KPIS            || '',
+    initiatives:    process.env.SIAGPT_ASSISTANT_W3_INITIATIVES     || '',
+    prioritisation: process.env.SIAGPT_ASSISTANT_W3_PRIORITISATION  || '',
+  } as Record<string, string>,
+  // LiteLLM gateway (OpenAI-compatible) — used to turn an approved agent conversation into an
+  // exportable report and to build the Wave 3 dashboard; independent of the SiaGPT agents above.
   reportLlm: {
     baseUrl: (process.env.REPORT_LLM_BASE_URL || 'https://litellm.heka.ai/v1').replace(/\/+$/, ''),
     apiKey: process.env.REPORT_LLM_API_KEY || process.env.OPENAI_API_KEY || '',

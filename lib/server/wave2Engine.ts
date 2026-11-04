@@ -2,36 +2,21 @@ import 'server-only'
 import { callSiaGPT } from './siagpt'
 import { config, WAVE2_ENV_VARS } from './config'
 import { buildWave2Prompt } from './prompts'
+import { getWave1Agent, getApprovedSummaryText, buildTranscriptText } from './wave1Engine'
 import {
-  getWave1Agent, getApprovedSummaryText, buildTranscriptText, recomputeWave1Locks, runWave1Agent, unlockWave1Agent, resetWave1Agent,
-  WAVE1_AGENT_IDS,
-} from './wave1Engine'
-import {
-  WAVE2_ORDER, WAVE2_LABELS, WAVE2_INPUTS, WAVE2_USES_DOCS, WAVE2_OPTIONAL,
-  isWave2AgentId, wave2OptionsEnabled, wave2SwotBEnabled, wave2SkippedIds, wave2DepIds, wave2DownstreamStarted, recomputeWave2Locks,
+  WAVE2_ORDER, WAVE2_LABELS, WAVE2_INPUTS, WAVE2_USES_DOCS, WAVE2_OPTIONAL, WAVE2_CONVERSATION_INPUTS,
+  isWave2AgentId, wave2OptionsEnabled, wave2SwotBEnabled, wave2SkippedIds, wave2DepIds, recomputeWave2Locks,
 } from '../wave2Shared'
+import { downstreamStarted } from '../wave3Shared'
 
 export const WAVE2_AGENT_IDS: string[] = [...WAVE2_ORDER]
-export const ALL_AGENT_IDS: string[] = [...WAVE1_AGENT_IDS, ...WAVE2_AGENT_IDS]
 
 export function getWave2Agent(entity: any, agentId: string): any {
   return entity.assessment.wave2.agents[agentId]
 }
 
-/** Any agent in either wave. Wave 2 depends on Wave 1's SWOT Part A, so its dep ids resolve through here. */
-export function getAnyAgent(entity: any, agentId: string): any {
-  return isWave2AgentId(agentId) ? getWave2Agent(entity, agentId) : getWave1Agent(entity, agentId)
-}
-
-/** Recompute both waves' lock state — Wave 1 approvals (SWOT Part A) gate Wave 2, so every route that can
- *  change an approval calls this rather than recomputeWave1Locks alone. */
-export function recomputeAllLocks(entity: any) {
-  recomputeWave1Locks(entity)
-  recomputeWave2Locks(entity.assessment)
-}
-
-/** The text a downstream Wave 2 prompt receives for one upstream agent: always its approved version. */
-function approvedText(entity: any, agentId: string): string {
+/** The text a downstream Wave 2 (or Wave 3) prompt receives for one upstream agent: always its approved version. */
+export function approvedText(entity: any, agentId: string): string {
   if (agentId === 'swot') {
     // SWOT Part A is handed over as its full reviewer<->agent conversation (frozen at approval — the chat
     // route refuses messages once approved), not just the extracted SWOT, so Wave 2 sees the reasoning,
@@ -47,6 +32,11 @@ function approvedText(entity: any, agentId: string): string {
 
 function inputLabel(agentId: string): string {
   return agentId === 'swot' ? 'SWOT Part A (Wave 1 conversation with the SWOT agent)' : WAVE2_LABELS[agentId]
+}
+
+/** The reviewer<->agent conversation of an approved Wave 2 agent. Falls back to its approved text if there's no chat. */
+function approvedConversation(entity: any, agentId: string): string {
+  return buildTranscriptText(getWave2Agent(entity, agentId).chatHistory) || approvedText(entity, agentId)
 }
 
 /**
@@ -99,7 +89,10 @@ export async function runWave2Agent(
 
   const skipped = wave2SkippedIds(wave2OptionsEnabled(entity.assessment), wave2SwotBEnabled(entity.assessment))
   const upstream = WAVE2_INPUTS[agentId].filter(id => !skipped.includes(id))
-  const inputs = upstream.map(id => ({ label: inputLabel(id), text: approvedText(entity, id) }))
+  const asConversation = WAVE2_CONVERSATION_INPUTS[agentId] || []
+  const inputs = upstream.map(id => asConversation.includes(id)
+    ? { label: `${inputLabel(id)} — full conversation with the agent`, text: approvedConversation(entity, id) }
+    : { label: inputLabel(id), text: approvedText(entity, id) })
   let prompt = buildWave2Prompt(entity, WAVE2_LABELS[agentId], inputs)
   const collectionIds = WAVE2_USES_DOCS[agentId] && entity.siagptCollectionId ? [entity.siagptCollectionId] : []
 
@@ -127,23 +120,16 @@ export async function runWave2Agent(
   return { version: v, preview: rawText, final: true, newSources }
 }
 
-/** Single entry point for the chat route — dispatches to the right wave's engine. */
-export function runAgent(project: any, entity: any, agentId: string, message: string) {
-  return isWave2AgentId(agentId)
-    ? runWave2Agent(project, entity, agentId, message)
-    : runWave1Agent(project, entity, agentId, message)
-}
-
 /**
  * Reverses approval so the reviewer can keep talking to the agent. Blocked once any Wave 2 agent downstream
  * of it has started — its approved output has already flowed on, so changing it underneath would leave
  * that agent stale. Wave 1's SWOT Part A is gated the same way (see unlockWave1Agent).
  */
-export function unlockAgent(entity: any, agentId: string) {
-  if (!isWave2AgentId(agentId)) { unlockWave1Agent(entity, agentId); return }
+export function unlockWave2Agent(entity: any, agentId: string) {
   const agent = getWave2Agent(entity, agentId)
   if (agent.approvedVersion === null) throw new Error('This agent is not approved.')
-  if (wave2DownstreamStarted(entity.assessment, agentId)) {
+  // Wave 3 consumes shiftAgenda / optionsEval / vmv too, so its agents (and the dashboard) count as downstream.
+  if (downstreamStarted(entity.assessment, agentId)) {
     throw new Error('This agent can no longer be unlocked — a later step has already run using its approved output.')
   }
   agent.approvedVersion = null
@@ -153,8 +139,7 @@ export function unlockAgent(entity: any, agentId: string) {
 }
 
 /** Wipes a Wave 2 agent back to a fresh state. Blocked while approved (unlock first), as in Wave 1. */
-export function resetAgent(entity: any, agentId: string) {
-  if (!isWave2AgentId(agentId)) { resetWave1Agent(entity, agentId); return }
+export function resetWave2Agent(entity: any, agentId: string) {
   const agent = getWave2Agent(entity, agentId)
   if (agent.approvedVersion !== null) {
     throw new Error('This agent is approved — unlock it first if you want to restart the discussion.')

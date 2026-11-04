@@ -5,12 +5,13 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useRouter } from 'next/navigation'
 import { useStore } from '@/store/useStore'
-import { projectsApi, wave1Api, wave2Api, entityDocumentsApi } from '@/lib/api'
+import { projectsApi, wave1Api, wave2Api, wave3Api, entityDocumentsApi } from '@/lib/api'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { SourceBadge } from '@/components/CitedText'
 import { SourcesPanel } from '@/components/SourcesPanel'
 import { ExportReportButton } from '@/components/ExportReportButton'
 import { MarkdownTable } from '@/components/MarkdownTable'
+import { StrategyDashboard } from '@/components/StrategyDashboard'
 import { copyRenderedElement } from '@/lib/copyRichContent'
 import { remarkWave1Citations } from '@/lib/remarkWave1Citations'
 import {
@@ -18,6 +19,7 @@ import {
   getAgentObj, agentLabel, isApproved, buildCitationMaps, hasVersion, canUnlock, wave1ApprovedCount, statusMeta, defaultKickoffMessage,
 } from '@/lib/wave1Client'
 import { wave2Sequence, wave2OptionsEnabled, wave2SwotBEnabled, isWave2AgentId, WAVE2_OPTIONAL } from '@/lib/wave2Shared'
+import { wave3Sequence, wave3DepIds, isWave3AgentId, dashboardApproved, WAVE3_DASHBOARD_LABEL, WAVE3_COLLECTION_FIELDS } from '@/lib/wave3Shared'
 
 function fmtScore(n: number | null | undefined): string {
   return n == null ? '—' : n.toFixed(1)
@@ -26,7 +28,7 @@ function fmtScore(n: number | null | undefined): string {
 const WAVES = [
   { key: 'diagnostic', label: 'Diagnostic', note: 'Internal + external analysis, feeding an entity-level SWOT.', available: true },
   { key: 'formulation', label: 'Formulation', note: 'Strategic direction, V/M/V and (optionally) strategic options, consolidated into SWOT Part B and a shift agenda.', available: true },
-  { key: 'translation', label: 'Translation', note: 'Strategy map → KPIs → initiatives.', available: false },
+  { key: 'translation', label: 'Translation', note: 'Strategy map → KPIs → initiatives → prioritisation, visualised as a strategy dashboard.', available: true },
   { key: 'execution', label: 'Execution', note: 'Alignment, operational plans, final plan documents.', available: false },
 ]
 
@@ -119,7 +121,7 @@ const WORKING_PHRASES = [
   'Checking citations',
   'Polishing the output',
 ]
-function AgentWorkingIndicator({ startedAt, onStop, stopping }: { startedAt?: string; onStop?: () => void; stopping?: boolean }) {
+function AgentWorkingIndicator({ startedAt, onStop, stopping, phrases = WORKING_PHRASES }: { startedAt?: string; onStop?: () => void; stopping?: boolean; phrases?: string[] }) {
   const [now, setNow] = useState(() => Date.now())
   const [mountedAt] = useState(() => Date.now())
   useEffect(() => {
@@ -129,7 +131,7 @@ function AgentWorkingIndicator({ startedAt, onStop, stopping }: { startedAt?: st
   const parsed = startedAt ? new Date(startedAt).getTime() : NaN
   const start = Number.isFinite(parsed) ? parsed : mountedAt
   const elapsed = Math.max(0, Math.floor((now - start) / 1000))
-  const phrase = WORKING_PHRASES[Math.min(Math.floor(elapsed / 8), WORKING_PHRASES.length - 1)]
+  const phrase = phrases[Math.min(Math.floor(elapsed / 8), phrases.length - 1)]
   const mm = Math.floor(elapsed / 60), ss = String(elapsed % 60).padStart(2, '0')
   return (
     <div className="fade-in" style={{ maxWidth: '85%', minWidth: '220px', alignSelf: 'flex-start', background: 'var(--sia-light-gray)', borderRadius: '10px', padding: '9px 12px' }}>
@@ -938,15 +940,16 @@ function FormulationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <OptionsChoicePrompt project={project} entity={entity} onChanged={onChanged} />
           {entity.assessment.wave2.optionsEnabled !== null && (
-            <>
-              {row('optionsDesign', { optional: true })}
-              {row('optionsEval', { optional: true })}
-              {!enabled && (
-                <div style={{ fontSize: '11px', color: 'var(--sia-medium-gray)' }}>
-                  Skipped — SWOT Part B and the Shift Agenda don't wait on these.
-                </div>
-              )}
-            </>
+            enabled ? (
+              <>
+                {row('optionsDesign', { optional: true })}
+                {row('optionsEval', { optional: true })}
+              </>
+            ) : (
+              <div style={{ fontSize: '11px', color: 'var(--sia-medium-gray)' }}>
+                Skipped — SWOT Part B and the Shift Agenda don't wait on these.
+              </div>
+            )
           )}
         </div>
       </div>
@@ -971,6 +974,203 @@ function FormulationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
   )
 }
 
+// ─── Wave 3 (Translation) ───────────────────────────────────────────────────────────────────────────────
+// Mirrors the Wave 3 functional flow diagram: 1. Strategy Map → 2. KPIs / Performance → 3. Initiatives
+// definition → 4. Initiatives prioritisation, with optional finance documents feeding 2 and optional functional & operations documents feeding 3 and 4,
+// and 5. the Strategy Visualisation / BI Dashboard generated from all of their conversations (plus V/M/V).
+function wave3WaitingOn(entity: any, id: string): string[] {
+  return wave3DepIds(id, entity.assessment).filter(d => !isApproved(entity, d)).map(d => agentLabel(entity, d))
+}
+
+const DASHBOARD_PHRASES = [
+  'Reading the agents’ conversations',
+  'Settling objectives and themes',
+  'Linking KPIs to objectives',
+  'Placing initiatives on the roadmap',
+  'Validating the data model',
+]
+
+/** One of the diagram's two optional "(collection)" inputs: uploads go into their own SiaGPT collection (created on
+ *  first upload) which is attached to the consuming agents on every turn. */
+function CollectionUploadCard({ project, entity, kind, title, feeds, onChanged }: {
+  project: any; entity: any; kind: 'finance' | 'functional'; title: string; feeds: string; onChanged: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const collectionId: string = entity.assessment.wave3[WAVE3_COLLECTION_FIELDS[kind]] || ''
+  const docs: any[] = (entity.documents || []).filter((d: any) => d.type === `wave3_${kind}`)
+
+  async function upload(files: FileList | null) {
+    if (!files?.length) return
+    setBusy(true)
+    try {
+      await entityDocumentsApi.upload(project.id, entity.id, Array.from(files), `wave3_${kind}`, title, kind)
+      await onChanged()
+    } catch (e: any) { alert('Upload failed: ' + (e.response?.data?.error || e.message)) }
+    setBusy(false)
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  return (
+    <div style={{ padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px dashed rgba(23,48,68,0.18)', background: 'rgba(69,85,105,0.03)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+        <div>
+          <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--sia-navy)' }}>{title} <span style={{ fontWeight: 400, color: 'var(--sia-medium-gray)' }}>(optional)</span></div>
+          <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginTop: '2px' }}>
+            Uploaded into its own collection and attached to {feeds}. Skip it to run without.
+          </div>
+        </div>
+        <input ref={inputRef} type="file" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg" onChange={e => upload(e.target.files)} />
+        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {busy ? <Loader2 size={11} className="spinner" /> : <Upload size={11} />} Upload
+        </button>
+      </div>
+      {docs.length > 0 && (
+        <div style={{ fontSize: '11.5px', color: 'var(--sia-cool-black)', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {docs.map(d => <div key={d.id}>• {d.name}</div>)}
+          {!collectionId && <div style={{ color: '#B45309' }}>No SiaGPT collection — documents are not attached.</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DashboardStep({ project, entity, onChanged }: { project: any; entity: any; onChanged: () => Promise<void> }) {
+  const dash = entity.assessment.wave3.dashboard
+  const [instruction, setInstruction] = useState('')
+  const [busy, setBusy] = useState(false)
+  const locked = dash.status === 'locked'
+  const running = dash.status === 'in_progress'
+  const approved = dash.approvedVersion !== null
+  const waiting: string[] = (dash.depIds as string[]).filter(d => !isApproved(entity, d)).map(d => agentLabel(entity, d))
+
+  async function call(fn: () => Promise<any>, failLabel: string) {
+    setBusy(true)
+    try { await fn(); await onChanged() } catch (e: any) { alert(`${failLabel}: ` + (e.response?.data?.error || e.message)) }
+    setBusy(false)
+  }
+  const generate = () => call(async () => { await wave3Api.generateDashboard(project.id, entity.id, instruction.trim() || undefined); setInstruction('') }, 'Generate failed')
+
+  return (
+    <div className="card fade-in" style={{ padding: '16px 18px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {locked && <Lock size={13} color="var(--sia-medium-gray)" />}
+            <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--sia-navy)' }}>{WAVE3_DASHBOARD_LABEL}</span>
+            <span style={{ fontSize: '10px', fontWeight: 600, color: '#8B5CF6', background: 'rgba(139,92,246,0.1)', padding: '2px 7px', borderRadius: '999px' }}>WAVE GATE</span>
+          </div>
+          <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginTop: '3px' }}>
+            Built from the full conversations of V/M/V and steps 1–4 as one structured data model: strategy map, KPI scorecard, roadmap, exports.
+            Approving it is the gate before Wave 4.
+          </div>
+        </div>
+        {approved && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 600, color: 'var(--sia-green)' }}>
+            <CheckCircle2 size={14} /> Approved{dash.approvedBy ? ` by ${dash.approvedBy}` : ''}
+          </span>
+        )}
+      </div>
+
+      {locked && (
+        <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginTop: '10px' }}>Waiting on: {waiting.join(', ')}</div>
+      )}
+
+      {!locked && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+          {running ? (
+            <AgentWorkingIndicator
+              startedAt={dash.pendingMessage?.at} phrases={DASHBOARD_PHRASES}
+              stopping={busy} onStop={() => call(() => wave3Api.stopDashboard(project.id, entity.id), 'Stop failed')}
+            />
+          ) : !approved && (
+            <>
+              <textarea
+                className="form-input" rows={2} value={instruction} onChange={e => setInstruction(e.target.value)} disabled={busy}
+                placeholder={dash.data
+                  ? 'Optional revision, e.g. "Add a People objective for capability building" or "Move the digital platform to FY27"'
+                  : 'Optional guidance for the first generation (leave empty to build it straight from the conversations)'}
+                style={{ width: '100%', resize: 'vertical', fontSize: '12.5px' }}
+              />
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={generate}>
+                  {busy ? <Loader2 size={11} className="spinner" /> : <Play size={11} />} {dash.data ? 'Regenerate / apply revision' : 'Generate dashboard'}
+                </button>
+                {dash.data && (
+                  <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => call(() => wave3Api.approveDashboard(project.id, entity.id), 'Approve failed')}>
+                    <CheckCircle2 size={11} /> Approve dashboard
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+          {approved && (
+            <div>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => call(() => wave3Api.unlockDashboard(project.id, entity.id), 'Unlock failed')}>
+                <Unlock size={11} /> Unlock to revise
+              </button>
+            </div>
+          )}
+          {dash.lastError && !running && (
+            <div style={{ fontSize: '12px', color: 'var(--sia-red)', background: '#FEF2F2', border: '1px solid #FECACA', padding: '8px 10px', borderRadius: 'var(--radius)' }}>
+              The last attempt failed: {dash.lastError.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      {dash.data && (
+        <div style={{ marginTop: '16px' }}>
+          <StrategyDashboard data={dash.data} entityName={entity.name} />
+          <div style={{ fontSize: '10.5px', color: 'var(--sia-medium-gray)', marginTop: '6px' }}>
+            Version {dash.version}{dash.generatedAt ? ` · generated ${new Date(dash.generatedAt).toLocaleString()}` : ''}. Illustrative layout; actuals and RAG arrive in Wave 4.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TranslationWaveContent({ project, entity, onOpen, onChanged, onQuickRun, runningIds }: {
+  project: any; entity: any; onOpen: (id: string) => void; onChanged: () => Promise<void>
+  onQuickRun: (id: string) => void; runningIds: Set<string>
+}) {
+  const gateOpen = isApproved(entity, 'shiftAgenda')
+  const row = (id: string) => (
+    <AgentRow projectId={project.id}
+      key={id} entity={entity} id={id} onOpen={onOpen} onQuickRun={onQuickRun} running={runningIds.has(id)}
+      depLabels={wave3WaitingOn(entity, id)}
+    />
+  )
+
+  return (
+    <>
+      {!gateOpen && (
+        <div style={{ fontSize: '12.5px', color: 'var(--sia-cool-black)', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', padding: '10px 12px', borderRadius: 'var(--radius)', marginBottom: '16px' }}>
+          Wave 3 starts once Wave 2 is complete — the Shift Agenda (and Strategic Options, if run) and V/M/V must be approved first. Approve them in the Formulation tab.
+        </div>
+      )}
+
+      <div className="card fade-in" style={{ padding: '16px 18px', marginBottom: '16px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--sia-navy)' }}>Translation layer</div>
+        <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginBottom: '14px' }}>
+          Strategy Map (Shift Agenda, Strategic Options, V/M/V) → KPIs (baselines from the Wave 1 internal analysis, plus optional finance documents) → Initiatives → Prioritisation.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {row('strategyMap')}
+          <CollectionUploadCard project={project} entity={entity} kind="finance" title="Finance documents" feeds="KPIs / Performance" onChanged={onChanged} />
+          {row('kpis')}
+          <CollectionUploadCard project={project} entity={entity} kind="functional" title="Functional & operations input" feeds="Initiatives definition and Initiatives prioritisation" onChanged={onChanged} />
+          {row('initiatives')}
+          {row('prioritisation')}
+        </div>
+      </div>
+
+      <DashboardStep project={project} entity={entity} onChanged={onChanged} />
+    </>
+  )
+}
+
 export default function AssessmentPage() {
   const router = useRouter()
   const { project, activeEntityId, setProject } = useStore()
@@ -987,8 +1187,11 @@ export default function AssessmentPage() {
     : null
   const runStartTimes: number[] = []
   if (syncEntity) {
-    for (const id of [...wave1Sequence(syncEntity), ...wave2Sequence(syncEntity.assessment)]) {
-      const a = getAgentObj(syncEntity, id)
+    const runnables = [
+      ...[...wave1Sequence(syncEntity), ...wave2Sequence(syncEntity.assessment), ...wave3Sequence()].map(id => getAgentObj(syncEntity, id)),
+      syncEntity.assessment.wave3?.dashboard,
+    ]
+    for (const a of runnables) {
       if (a?.status === 'in_progress') runStartTimes.push(a.pendingMessage?.at ? new Date(a.pendingMessage.at).getTime() : Date.now())
     }
   }
@@ -1026,7 +1229,8 @@ export default function AssessmentPage() {
     const freshEntity = activeEntityId
       ? (freshEntities.find((e: any) => e.id === activeEntityId) ?? mainEntityAdapter(updated.data))
       : mainEntityAdapter(updated.data)
-    const sequence = isWave2AgentId(approvedAgentId) ? wave2Sequence(freshEntity.assessment) : wave1Sequence(freshEntity)
+    const sequence = isWave3AgentId(approvedAgentId) ? wave3Sequence()
+      : isWave2AgentId(approvedAgentId) ? wave2Sequence(freshEntity.assessment) : wave1Sequence(freshEntity)
     const idx = sequence.indexOf(approvedAgentId)
     const next = sequence.slice(idx + 1).find(id => !isApproved(freshEntity, id) && !['locked', 'skipped'].includes(getAgentObj(freshEntity, id).status))
     setOpenAgentId(next ?? null)
@@ -1080,6 +1284,7 @@ export default function AssessmentPage() {
             <div style={{ fontSize: '13.5px', fontWeight: 600, color: activeWave === w.key ? 'var(--sia-navy)' : 'var(--sia-cool-black)' }}>
               {w.key === 'diagnostic' ? `${wave1ApprovedCount(entity)}/${wave1Total(entity)} approved`
                 : w.key === 'formulation' ? `${wave2Sequence(entity.assessment).filter(id => isApproved(entity, id)).length}/${wave2Sequence(entity.assessment).length} approved`
+                : w.key === 'translation' ? `${wave3Sequence().filter(id => isApproved(entity, id)).length + (dashboardApproved(entity.assessment) ? 1 : 0)}/${wave3Sequence().length + 1} approved`
                 : '—'}
             </div>
           </div>
@@ -1091,10 +1296,12 @@ export default function AssessmentPage() {
         <DiagnosticWaveContent project={project} entity={entity} onOpen={setOpenAgentId} onChanged={refresh} onQuickRun={quickRun} runningIds={runningIds} />
       ) : activeWave === 'formulation' ? (
         <FormulationWaveContent project={project} entity={entity} onOpen={setOpenAgentId} onChanged={refresh} onQuickRun={quickRun} runningIds={runningIds} />
+      ) : activeWave === 'translation' ? (
+        <TranslationWaveContent project={project} entity={entity} onOpen={setOpenAgentId} onChanged={refresh} onQuickRun={quickRun} runningIds={runningIds} />
       ) : (
         <div className="card" style={{ padding: '32px', textAlign: 'center', color: 'var(--sia-medium-gray)' }}>
           <p style={{ fontSize: '13px', margin: 0 }}>
-            The {wave.label} wave's agents aren't wired up yet — only the Diagnostic wave runs today.
+            The {wave.label} wave's agents aren't wired up yet.
           </p>
         </div>
       )}

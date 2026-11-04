@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { loadProject, saveProject, PILLAR_IDS } from '@/lib/server/helpers'
 import { requireProjectAuth } from '@/lib/server/auth'
 import { resolveWave1Entity } from '@/lib/server/wave1Engine'
-import { ALL_AGENT_IDS, getAnyAgent } from '@/lib/server/wave2Engine'
+import { ALL_AGENT_IDS, getAnyAgent } from '@/lib/server/agentEngine'
 import { buildReportMessages, buildReferencesMarkdown, callReportLlm } from '@/lib/server/reportEngine'
 
 export const runtime = 'nodejs'

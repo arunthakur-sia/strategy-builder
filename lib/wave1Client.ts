@@ -3,7 +3,8 @@
 // portfolio) and AssessmentPage (a single entity's wave workspace) so entity/agent shape logic lives in one place.
 
 import { extractWave1Tokens } from './remarkWave1Citations'
-import { isWave2AgentId, wave2DownstreamStarted, WAVE2_LABELS } from './wave2Shared'
+import { isWave2AgentId, WAVE2_LABELS } from './wave2Shared'
+import { isWave3AgentId, downstreamStarted, WAVE3_LABELS } from './wave3Shared'
 
 export const ENTITY_TYPES = [
   { value: 'government', label: 'Government Ministry / Authority' },
@@ -52,6 +53,7 @@ export function mainEntityAdapter(project: any): any {
 }
 
 export function getAgentObj(entity: any, id: string): any {
+  if (isWave3AgentId(id)) return entity.assessment.wave3.agents[id]
   if (isWave2AgentId(id)) return entity.assessment.wave2.agents[id]
   if (id === 'swot') return entity.assessment.swotAgent
   if (entity.assessment.pillars[id]) return entity.assessment.pillars[id]
@@ -59,6 +61,7 @@ export function getAgentObj(entity: any, id: string): any {
 }
 
 export function agentLabel(entity: any, id: string): string {
+  if (isWave3AgentId(id)) return WAVE3_LABELS[id]
   if (isWave2AgentId(id)) return WAVE2_LABELS[id]
   if (id === 'swot') return 'SWOT — analysis & focus areas'
   if (id === 'idiGuide') return 'IDI Guide'
@@ -75,9 +78,9 @@ export function isApproved(entity: any, id: string): boolean {
  *  right up until the SWOT agent has actually run off its approved output — the SWOT agent itself has
  *  no such downstream in Wave 1, so it stays unlockable until a Wave 2 agent has started on it. */
 export function canUnlock(entity: any, id: string): boolean {
-  // SWOT Part A also feeds Wave 2, and Wave 2 agents feed each other — same rule as the server's guards.
-  if (id === 'swot') return !wave2DownstreamStarted(entity.assessment, 'swot')
-  if (isWave2AgentId(id)) return !wave2DownstreamStarted(entity.assessment, id)
+  // SWOT Part A also feeds Wave 2, Wave 2 agents feed each other and Wave 3, and Wave 3 agents feed each other
+  // and the dashboard — same rule as the server's guards.
+  if (id === 'swot' || isWave2AgentId(id) || isWave3AgentId(id)) return !downstreamStarted(entity.assessment, id)
   return !hasVersion(getAgentObj(entity, 'swot'))
 }
 
@@ -110,7 +113,7 @@ export function defaultKickoffMessage(agentId: string, entity: any): string {
   if (FANOUT_ORDER.includes(agentId)) return 'Run.'
   // Wave 2 assistants carry their own persona and output format; the engine supplies the approved upstream
   // outputs and company docs, so the kickoff is just a trigger.
-  if (isWave2AgentId(agentId)) return 'Run.'
+  if (isWave2AgentId(agentId) || isWave3AgentId(agentId)) return 'Run.'
   if (agentId === 'swot') return 'Consolidate the approved pillar and external-analysis outputs into the entity-level SWOT.'
   return 'Run the assessment.'
 }

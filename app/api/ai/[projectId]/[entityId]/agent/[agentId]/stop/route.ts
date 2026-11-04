@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { updateProject } from '@/lib/server/helpers'
 import { requireProjectAuth } from '@/lib/server/auth'
 import { resolveWave1Entity } from '@/lib/server/wave1Engine'
-import { ALL_AGENT_IDS, getAnyAgent, recomputeAllLocks } from '@/lib/server/wave2Engine'
+import { ALL_AGENT_IDS, getAnyAgent, recomputeAllLocks } from '@/lib/server/agentEngine'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60

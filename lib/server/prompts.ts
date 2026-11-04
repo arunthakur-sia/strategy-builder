@@ -124,3 +124,28 @@ export function cleanReportContent(raw: string): string {
     .replace(/\n#{1,3}\s*(Appendix|appendix)[^\n]*\n[\s\S]*/g, '')
     .trimEnd()
 }
+
+// ─── Wave 3 (Translation) agents ──────────────────────────────────────────────
+// Like Wave 2, the Wave 3 assistants carry their persona and output format in SiaGPT — we hand them the
+// entity and every input the flow diagram routes into this node. `approved` sections are frozen, human-approved
+// outputs; `provided` sections are reference material the reviewer supplied or the Wave 1 record (not an agent
+// output awaiting sign-off, so they are labelled differently).
+export function buildWave3Prompt(
+  entity: { name: string; type: string },
+  agentLabel: string,
+  approved: { label: string; text: string }[],
+  provided: { label: string; text: string }[] = []
+): string {
+  const approvedText = approved
+    .map(i => `━━━ ${i.label} (approved) ━━━\n${i.text || '(approved with no recorded content)'}`)
+    .join('\n\n')
+  const providedText = provided
+    .map(i => `━━━ ${i.label} ━━━\n${i.text || '(none provided)'}`)
+    .join('\n\n')
+  return `Entity: ${entity.name} (${entity.type})
+Step: ${agentLabel}
+
+Upstream outputs approved by the reviewer, to be used as the basis for this step:
+
+${approvedText}${providedText ? `\n\nAdditional input for this step:\n\n${providedText}` : ''}`
+}

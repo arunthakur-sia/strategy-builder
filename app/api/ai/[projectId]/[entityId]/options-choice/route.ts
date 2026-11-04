@@ -8,6 +8,7 @@ import { loadProject, saveProject } from '@/lib/server/helpers'
 import { requireProjectAuth } from '@/lib/server/auth'
 import { resolveWave1Entity } from '@/lib/server/wave1Engine'
 import { setWave2OptionsEnabled, setWave2SwotBEnabled } from '@/lib/server/wave2Engine'
+import { recomputeAllLocks } from '@/lib/server/agentEngine'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -30,6 +31,8 @@ export async function POST(
 
     if (step === 'swotB') setWave2SwotBEnabled(entity, enabled)
     else setWave2OptionsEnabled(entity, enabled)
+    // Wave 3's Strategy Map inputs depend on this choice too.
+    recomputeAllLocks(entity)
     await saveProject(project)
 
     return NextResponse.json({ success: true, entityId, enabled })

@@ -13,7 +13,9 @@
 //        Options Design        (optionsDesign) <- company docs, SWOT Part A, Direction, V/M/V
 //        Options Evaluation    (optionsEval)   <- company docs, SWOT Part A, Direction, V/M/V, Options Design
 //   4. SWOT Part B            (swotB)     <- company docs, SWOT Part A, Direction, V/M/V, Options Evaluation
-//   5. Shift Agenda           (shiftAgenda) <- V/M/V, Options Evaluation, SWOT Part B
+//   5. Shift Agenda           (shiftAgenda) <- Direction, V/M/V, Options Evaluation, SWOT Part B
+//   Direction and V/M/V reach SWOT Part B and Shift Agenda as their full reviewer<->agent conversations
+//   (WAVE2_CONVERSATION_INPUTS), not just the approved summary text.
 
 export const WAVE2_ORDER = ['direction', 'vmv', 'optionsDesign', 'optionsEval', 'swotB', 'shiftAgenda'] as const
 export type Wave2AgentId = typeof WAVE2_ORDER[number]
@@ -50,7 +52,15 @@ export const WAVE2_INPUTS: Record<string, string[]> = {
   optionsDesign: ['swot', 'direction', 'vmv'],
   optionsEval: ['swot', 'direction', 'vmv', 'optionsDesign'],
   swotB: ['swot', 'direction', 'vmv', 'optionsEval'],
-  shiftAgenda: ['vmv', 'optionsEval', 'swotB'],
+  shiftAgenda: ['direction', 'vmv', 'optionsEval', 'swotB'],
+}
+
+/** Upstream ids a consumer receives as the full approved conversation (chat transcript) rather than the
+ *  agent's approved output text — so the reasoning, corrections and caveats behind Direction and V/M/V
+ *  reach SWOT Part B and the Shift Agenda. Transcripts are frozen at approval (chat refuses approved agents). */
+export const WAVE2_CONVERSATION_INPUTS: Record<string, string[]> = {
+  swotB: ['direction', 'vmv'],
+  shiftAgenda: ['direction', 'vmv'],
 }
 
 export function isWave2AgentId(id: string): boolean {

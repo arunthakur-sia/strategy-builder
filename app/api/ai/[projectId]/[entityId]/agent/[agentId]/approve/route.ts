@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { loadProject, saveProject, computePillarFinalScore, PILLAR_IDS } from '@/lib/server/helpers'
 import { requireProjectAuth } from '@/lib/server/auth'
 import { ensureApprovableVersion, resolveWave1Entity } from '@/lib/server/wave1Engine'
-import { ALL_AGENT_IDS, getAnyAgent, recomputeAllLocks } from '@/lib/server/wave2Engine'
+import { ALL_AGENT_IDS, getAnyAgent, recomputeAllLocks } from '@/lib/server/agentEngine'
 
 function isValidScore(n: any): n is number {
   return typeof n === 'number' && !isNaN(n) && n >= 1 && n <= 5
