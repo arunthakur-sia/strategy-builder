@@ -916,8 +916,8 @@ function FormulationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
     <>
       {!swotApproved && (
         <div style={{ fontSize: '12.5px', color: 'var(--sia-cool-black)', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', padding: '10px 12px', borderRadius: 'var(--radius)', marginBottom: '16px' }}>
-          Wave 2 starts once SWOT Part A (the Diagnostic wave's entity SWOT) is approved — its conversation is passed to every
-          Formulation agent. Approve it in the Diagnostic tab first.
+          Wave 2 starts once SWOT Part A (the Diagnostic wave's entity SWOT) is approved — its conversation is passed to
+          V/M/V and Strategic Options. Approve it in the Diagnostic tab first.
         </div>
       )}
 

@@ -5,17 +5,18 @@
 // is an entry in WAVE2_INPUTS below (the producing agent -> the consuming agent). 'swot' is Wave 1's
 // SWOT Part A (entity.assessment.swotAgent); every other id is a Wave 2 agent under assessment.wave2.agents.
 //
-//   0. Gate: Wave 1's SWOT Part A must be approved before anything in Wave 2 can run — its approved
-//      conversation is what gets handed to the Wave 2 agents.
-//   1. Strategic Direction (direction)   <- SWOT Part A, company docs
+//   0. Gate: Wave 1's SWOT Part A must be approved before anything in Wave 2 can run (WAVE2_GATES covers
+//      Direction, the only agent that doesn't also receive SWOT Part A as an input).
+//   1. Strategic Direction (direction)   <- company docs only (gated on SWOT Part A, content not passed)
 //   2. V/M/V                  (vmv)       <- SWOT Part A, Strategic Direction
 //   3. Strategic Options (optional step, one on/off switch for both agents):
 //        Options Design        (optionsDesign) <- company docs, SWOT Part A, Direction, V/M/V
 //        Options Evaluation    (optionsEval)   <- company docs, SWOT Part A, Direction, V/M/V, Options Design
-//   4. SWOT Part B            (swotB)     <- company docs, SWOT Part A, Direction, V/M/V, Options Evaluation
-//   5. Shift Agenda           (shiftAgenda) <- Direction, V/M/V, Options Evaluation, SWOT Part B
-//   Direction and V/M/V reach SWOT Part B and Shift Agenda as their full reviewer<->agent conversations
-//   (WAVE2_CONVERSATION_INPUTS), not just the approved summary text.
+//   4. SWOT Part B            (swotB)     <- company docs, Options Evaluation, V/M/V
+//   5. Shift Agenda           (shiftAgenda) <- SWOT Part B, Options Evaluation, V/M/V
+//   "Approved" means the reviewer approved the agent's conversation; what the next agent receives is that
+//   full reviewer<->agent conversation (WAVE2_CONVERSATION_INPUTS), not just the approved summary text.
+//   Every Wave 2 agent gets all of its agent inputs this way.
 
 export const WAVE2_ORDER = ['direction', 'vmv', 'optionsDesign', 'optionsEval', 'swotB', 'shiftAgenda'] as const
 export type Wave2AgentId = typeof WAVE2_ORDER[number]
@@ -47,20 +48,28 @@ export const WAVE2_USES_DOCS: Record<string, boolean> = {
 
 /** Every upstream output each agent consumes (diagram arrows). All of these must be approved before it runs. */
 export const WAVE2_INPUTS: Record<string, string[]> = {
-  direction: ['swot'],
+  direction: [],
   vmv: ['swot', 'direction'],
   optionsDesign: ['swot', 'direction', 'vmv'],
   optionsEval: ['swot', 'direction', 'vmv', 'optionsDesign'],
-  swotB: ['swot', 'direction', 'vmv', 'optionsEval'],
-  shiftAgenda: ['direction', 'vmv', 'optionsEval', 'swotB'],
+  swotB: ['optionsEval', 'vmv'],
+  shiftAgenda: ['swotB', 'optionsEval', 'vmv'],
+}
+
+/** Approval-only dependencies: must be approved before the agent runs, but NOT passed into its prompt. */
+export const WAVE2_GATES: Record<string, string[]> = {
+  direction: ['swot'],
 }
 
 /** Upstream ids a consumer receives as the full approved conversation (chat transcript) rather than the
- *  agent's approved output text — so the reasoning, corrections and caveats behind Direction and V/M/V
- *  reach SWOT Part B and the Shift Agenda. Transcripts are frozen at approval (chat refuses approved agents). */
+ *  agent's approved output text — so the reasoning, corrections and caveats behind each input reach SWOT
+ *  Part B and the Shift Agenda. Transcripts are frozen at approval (chat refuses approved agents). */
 export const WAVE2_CONVERSATION_INPUTS: Record<string, string[]> = {
-  swotB: ['direction', 'vmv'],
-  shiftAgenda: ['direction', 'vmv'],
+  vmv: ['swot', 'direction'],
+  optionsDesign: ['swot', 'direction', 'vmv'],
+  optionsEval: ['swot', 'direction', 'vmv', 'optionsDesign'],
+  swotB: ['optionsEval', 'vmv'],
+  shiftAgenda: ['swotB', 'optionsEval', 'vmv'],
 }
 
 export function isWave2AgentId(id: string): boolean {
@@ -86,7 +95,7 @@ export function wave2SkippedIds(optionsEnabled: boolean, swotBEnabled: boolean):
  *  from every consumer's inputs (the bypass lines in the diagram). */
 export function wave2DepIds(agentId: string, optionsEnabled: boolean, swotBEnabled = true): string[] {
   const skipped = wave2SkippedIds(optionsEnabled, swotBEnabled)
-  return (WAVE2_INPUTS[agentId] || []).filter(id => !skipped.includes(id))
+  return [...(WAVE2_GATES[agentId] || []), ...(WAVE2_INPUTS[agentId] || [])].filter(id => !skipped.includes(id))
 }
 
 /** The agents that actually participate, in diagram order. */

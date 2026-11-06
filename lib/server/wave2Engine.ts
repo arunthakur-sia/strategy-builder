@@ -35,7 +35,8 @@ function inputLabel(agentId: string): string {
 }
 
 /** The reviewer<->agent conversation of an approved Wave 2 agent. Falls back to its approved text if there's no chat. */
-function approvedConversation(entity: any, agentId: string): string {
+export function approvedConversation(entity: any, agentId: string): string {
+  if (agentId === 'swot') return approvedText(entity, 'swot') // already its Wave 1 transcript
   return buildTranscriptText(getWave2Agent(entity, agentId).chatHistory) || approvedText(entity, agentId)
 }
 

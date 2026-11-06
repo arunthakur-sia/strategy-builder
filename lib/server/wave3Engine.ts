@@ -3,7 +3,7 @@ import { callSiaGPT } from './siagpt'
 import { config, WAVE3_ENV_VARS } from './config'
 import { buildWave3Prompt } from './prompts'
 import { buildTranscriptText } from './wave1Engine'
-import { approvedText as wave2ApprovedText } from './wave2Engine'
+import { approvedConversation as wave2ApprovedConversation } from './wave2Engine'
 import { PILLAR_IDS } from './helpers'
 import { WAVE2_LABELS } from '../wave2Shared'
 import {
@@ -17,12 +17,15 @@ export function getWave3Agent(entity: any, agentId: string): any {
   return entity.assessment.wave3.agents[agentId]
 }
 
-/** The text a downstream prompt receives for one upstream agent: always its approved version. */
+/** What a downstream prompt receives for one upstream agent: the full reviewer<->agent conversation of its
+ *  approved agent (frozen at approval — chat refuses approved agents). Falls back to the approved version's
+ *  text when there is no chat. Unapproved agents yield ''. */
 export function approvedInputText(entity: any, agentId: string): string {
-  if (!isWave3AgentId(agentId)) return wave2ApprovedText(entity, agentId)
+  if (!isWave3AgentId(agentId)) return wave2ApprovedConversation(entity, agentId)
   const agent = getWave3Agent(entity, agentId)
   if (agent.approvedVersion === null) return ''
-  return agent.versionHistory.find((v: any) => v.v === agent.approvedVersion)?.text || ''
+  return buildTranscriptText(agent.chatHistory)
+    || agent.versionHistory.find((v: any) => v.v === agent.approvedVersion)?.text || ''
 }
 
 export function inputLabel(agentId: string): string {
@@ -55,7 +58,7 @@ export async function runWave3Agent(
     throw new Error(`The "${WAVE3_LABELS[agentId]}" assistant isn't configured — set ${WAVE3_ENV_VARS[agentId]} in the environment.`)
   }
 
-  const approved = wave3DepIds(agentId, entity.assessment).map(id => ({ label: inputLabel(id), text: approvedInputText(entity, id) }))
+  const approved = wave3DepIds(agentId, entity.assessment).map(id => ({ label: `${inputLabel(id)} — full conversation with the agent`, text: approvedInputText(entity, id) }))
   const provided = WAVE3_USES_INTERNAL_ANALYSIS[agentId] ? internalAnalysisSections(entity) : []
   let prompt = buildWave3Prompt(entity, WAVE3_LABELS[agentId], approved, provided)
   // The diagram's optional "(collection)" inputs: finance docs -> KPIs, functional & operations docs -> Initiatives
