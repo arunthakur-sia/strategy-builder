@@ -90,10 +90,6 @@ interface EntityAssessment {
   }
   /** Wave 3 (Translation) — see lib/wave3Shared.ts for the agent ids and dependency edges. */
   wave3: {
-    /** Optional SiaGPT collection of finance documents (feeds KPIs); '' until the first upload. */
-    financeCollectionId: string
-    /** Optional SiaGPT collection of functional & operations documents (feeds Initiatives and Prioritisation). */
-    functionalCollectionId: string
     agents: Record<string, NarrativeAgent>
     /** Step 5: structured dashboard data (shape: lib/wave3Dashboard.ts) generated from the agents' conversations. */
     dashboard: {

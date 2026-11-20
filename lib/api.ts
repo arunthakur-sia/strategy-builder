@@ -174,7 +174,7 @@ export const entitiesApi = {
 export const entityDocumentsApi = {
   upload: async (
     projectId: string, entityId: string, files: File[], docType: string, docLabel: string,
-    targetCollection?: 'main' | 'interview' | 'finance' | 'functional'
+    targetCollection?: 'main' | 'interview'
   ) => {
     const uploadedFiles = await uploadFilesViaBlob(projectId, files)
     return api.post(`/documents/${projectId}/${entityId}/upload`, {
@@ -236,8 +236,8 @@ export const wave2Api = {
     api.post(`/ai/${projectId}/${entityId}/options-choice`, { enabled, step: 'swotB' }),
 }
 
-// Wave 3 (Translation) agents also share wave1Api's chat/approve/unlock/reset endpoints. Only the reviewer's
-// optional document collections (via entityDocumentsApi.upload) and step 5 (the structured dashboard, which isn't a chat agent) are specific.
+// Wave 3 (Translation) agents also share wave1Api's chat/approve/unlock/reset endpoints. Only step 5 (the
+// structured dashboard, which isn't a chat agent) is specific.
 export const wave3Api = {
   // Generation runs in the background on the server — this returns as soon as it has started; the page polls.
   generateDashboard: (projectId: string, entityId: string, instruction?: string) =>

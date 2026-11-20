@@ -7,7 +7,7 @@ import { approvedConversation as wave2ApprovedConversation } from './wave2Engine
 import { PILLAR_IDS } from './helpers'
 import { WAVE2_LABELS } from '../wave2Shared'
 import {
-  WAVE3_ORDER, WAVE3_LABELS, WAVE3_USES_COLLECTION, WAVE3_COLLECTION_FIELDS, WAVE3_USES_INTERNAL_ANALYSIS,
+  WAVE3_ORDER, WAVE3_LABELS, WAVE3_USES_GREEN_LINE,
   isWave3AgentId, wave3DepIds, downstreamStarted, recomputeWave3Locks,
 } from '../wave3Shared'
 
@@ -32,11 +32,12 @@ export function inputLabel(agentId: string): string {
   return isWave3AgentId(agentId) ? WAVE3_LABELS[agentId] : WAVE2_LABELS[agentId]
 }
 
-/** "Baselines · Internal Analysis + finance": the Wave 1 pillar conversations (all frozen at approval — the
- *  SWOT Part A gate cannot be approved otherwise), the same raw transcripts the SWOT agent itself receives. */
-function internalAnalysisSections(entity: any): { label: string; text: string }[] {
+/** The Wave 1 half of the "green line": the full conversations of the eight pillar agents (all frozen at approval —
+ *  Wave 2 cannot start before SWOT Part A is approved, which needs every pillar approved), the same raw transcripts
+ *  the SWOT agent itself receives. */
+function pillarConversationSections(entity: any): { label: string; text: string }[] {
   return [{
-    label: 'Baselines — Wave 1 internal analysis (approved pillar conversations)',
+    label: 'Wave 1 — full conversations with the eight pillar agents (approved)',
     text: PILLAR_IDS.map(id => {
       const p = entity.assessment.pillars[id]
       return `### ${id}: ${p.name}\n${buildTranscriptText(p.chatHistory) || '(no conversation)'}`
@@ -46,7 +47,7 @@ function internalAnalysisSections(entity: any): { label: string; text: string }[
 
 /**
  * Runs (or continues) one Wave 3 agent. Same contract as runWave2Agent: builds the prompt from the approved
- * upstream outputs the diagram routes in (plus the diagram's side inputs), calls SiaGPT, appends a new
+ * upstream conversations the diagram routes in (plus the green-line inputs where it has them), calls SiaGPT, appends a new
  * immutable version. Does NOT touch chatHistory or approval state — the chat route owns that.
  */
 export async function runWave3Agent(
@@ -59,13 +60,12 @@ export async function runWave3Agent(
   }
 
   const approved = wave3DepIds(agentId, entity.assessment).map(id => ({ label: `${inputLabel(id)} — full conversation with the agent`, text: approvedInputText(entity, id) }))
-  const provided = WAVE3_USES_INTERNAL_ANALYSIS[agentId] ? internalAnalysisSections(entity) : []
+  // The "green line" (Strategy Map, KPIs, Initiatives): the eight pillar conversations plus the entity's company
+  // documents collection (the same one Waves 1 and 2 use). Prioritisation gets neither.
+  const greenLine = !!WAVE3_USES_GREEN_LINE[agentId]
+  const provided = greenLine ? pillarConversationSections(entity) : []
   let prompt = buildWave3Prompt(entity, WAVE3_LABELS[agentId], approved, provided)
-  // The diagram's optional "(collection)" inputs: finance docs -> KPIs, functional & operations docs -> Initiatives
-  // and Prioritisation. Passed on every turn; absent (and retrieval tools off) when the reviewer uploaded none.
-  const kind = WAVE3_USES_COLLECTION[agentId]
-  const collectionId: string = kind ? entity.assessment.wave3[WAVE3_COLLECTION_FIELDS[kind]] : ''
-  const collectionIds = collectionId ? [collectionId] : []
+  const collectionIds = greenLine && entity.siagptCollectionId ? [entity.siagptCollectionId] : []
 
   // One SiaGPT discussion per agent, opened on its first turn and reused until reset (see runWave2Agent).
   const isFirstTurn = !agent.discussionId
@@ -77,7 +77,7 @@ export async function runWave3Agent(
 
   const { text: rawText, newSources, discussionId } = await callSiaGPT(prompt, {
     assistantId, collectionIds, discussionId: agent.discussionId,
-    // Agents without a docs collection have nothing for the retrieval tools to act on.
+    // Agents without a docs collection (Prioritisation, or an entity with no documents) have nothing for the retrieval tools to act on.
     ...(collectionIds.length ? {} : { tools: [] }),
     context: `wave3 ${entity.name} / ${agentId}`,
   })

@@ -9,7 +9,6 @@ import { requireProjectAuth } from '@/lib/server/auth'
 import { config } from '@/lib/server/config'
 import { log } from '@/lib/server/logger'
 import { recomputeWave1Locks, resolveWave1Entity } from '@/lib/server/wave1Engine'
-import { WAVE3_COLLECTION_FIELDS } from '@/lib/wave3Shared'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -35,9 +34,8 @@ export async function POST(
       docType?: string
       docLabel?: string
       /** 'interview' routes the upload into the entity's separate interview-transcript collection
-       *  (created lazily here) and marks IDI Synth's uploadDep satisfied, instead of the main collection.
-       *  'finance' / 'functional' do the same for Wave 3's optional collections (see wave3Shared). */
-      targetCollection?: 'main' | 'interview' | 'finance' | 'functional'
+       *  (created lazily here) and marks IDI Synth's uploadDep satisfied, instead of the main collection. */
+      targetCollection?: 'main' | 'interview'
     }
     if (!files?.length) return NextResponse.json({ error: 'No files uploaded' }, { status: 400 })
 
@@ -48,25 +46,7 @@ export async function POST(
     }
 
     const isInterview = targetCollection === 'interview'
-    // Wave 3's two optional collections (finance -> KPIs, functional & operations -> Initiatives/Prioritisation)
-    // live on assessment.wave3 and are created lazily here, like the interview collection.
-    const wave3Kind = targetCollection === 'finance' || targetCollection === 'functional' ? targetCollection : null
-    const wave3Field = wave3Kind ? WAVE3_COLLECTION_FIELDS[wave3Kind] : null
-    const wave3 = entity.assessment?.wave3
-
-    if (wave3Field) {
-      if (!wave3) return NextResponse.json({ error: 'Wave 3 is not initialised for this entity' }, { status: 400 })
-      if (!wave3[wave3Field]) {
-        if (!config.siagptMediaFolderId) return NextResponse.json({ error: 'SiaGPT media folder is not configured — cannot create a collection' }, { status: 500 })
-        await getSiaGptToken().catch(() => {})
-        const collId = await createSiaGPTCollection(
-          `${entity.name} — ${wave3Kind === 'finance' ? 'finance documents' : 'functional & operations documents'}`,
-          `SIA Partners ${wave3Kind === 'finance' ? 'finance' : 'functional & operations'} input for ${entity.name} (Wave 3)`,
-        )
-        if (!collId) return NextResponse.json({ error: 'Could not create the SiaGPT collection' }, { status: 502 })
-        wave3[wave3Field] = collId
-      }
-    } else if (isInterview) {
+    if (isInterview) {
       // Lazily create the interview-transcript collection the first time it's needed.
       if (!entity.interviewCollectionId && config.siagptMediaFolderId) {
         await getSiaGptToken().catch(() => {})
@@ -94,7 +74,7 @@ export async function POST(
       await getSiaGptToken().catch(() => {})
     }
 
-    const uploadCollectionId = wave3Field ? wave3[wave3Field] : isInterview ? entity.interviewCollectionId : entity.siagptCollectionId
+    const uploadCollectionId = isInterview ? entity.interviewCollectionId : entity.siagptCollectionId
 
     const results = []
     for (const file of files) {
@@ -103,7 +83,7 @@ export async function POST(
       const buffer = Buffer.from(await new Response(blobResult.stream).arrayBuffer())
       const extractedText = await extractText(buffer, file.type, file.name)
       const doc: any = {
-        id: uuidv4(), name: file.name, type: docType || (isInterview ? 'interview_transcript' : wave3Kind ? `wave3_${wave3Kind}` : 'general'), label: docLabel || file.name,
+        id: uuidv4(), name: file.name, type: docType || (isInterview ? 'interview_transcript' : 'general'), label: docLabel || file.name,
         mimetype: file.type, size: file.size, extractedText,
         uploadedAt: new Date().toISOString(),
         wordCount: extractedText.split(/\s+/).filter(Boolean).length,
@@ -128,6 +108,6 @@ export async function POST(
     }
 
     await saveProject(project)
-    return NextResponse.json({ success: true, documents: results, interviewCollectionId: isInterview ? entity.interviewCollectionId : undefined, wave3CollectionId: wave3Field ? wave3[wave3Field] : undefined })
+    return NextResponse.json({ success: true, documents: results, interviewCollectionId: isInterview ? entity.interviewCollectionId : undefined })
   } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
 }

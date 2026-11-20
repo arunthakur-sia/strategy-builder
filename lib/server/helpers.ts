@@ -71,9 +71,8 @@ export function createWave2State() {
 }
 
 /** Wave 3 (Translation): four narrative agents plus the dashboard (step 5), which isn't a SiaGPT agent — it
- *  holds the structured JSON the report LLM produced from the agents' conversations. financeCollectionId /
- *  functionalCollectionId are the optional document collections (created on first upload) feeding KPIs and
- *  Initiatives + Prioritisation respectively. */
+ *  holds the structured JSON the report LLM produced from the agents' conversations. Wave 3 has no document
+ *  collections of its own — the green-line agents use the entity's company documents collection. */
 export function createWave3Dashboard() {
   return {
     status: 'locked' as string, depIds: [...WAVE3_DASHBOARD_INPUTS],
@@ -88,7 +87,7 @@ export function createWave3Dashboard() {
 export function createWave3State() {
   const agents: Record<string, any> = {}
   for (const id of WAVE3_ORDER) agents[id] = createNarrativeAgent(id, [...WAVE3_INPUTS[id]])
-  return { financeCollectionId: '', functionalCollectionId: '', agents, dashboard: createWave3Dashboard() }
+  return { agents, dashboard: createWave3Dashboard() }
 }
 
 export function createSwotAgentGate(pillarIds: string[]) {
@@ -306,8 +305,6 @@ function backfillWave2(assessment: any) {
 function backfillWave3(assessment: any) {
   if (!assessment.wave3) assessment.wave3 = createWave3State()
   const wave3 = assessment.wave3
-  if (typeof wave3.financeCollectionId !== 'string') wave3.financeCollectionId = ''
-  if (typeof wave3.functionalCollectionId !== 'string') wave3.functionalCollectionId = ''
   if (!wave3.agents) wave3.agents = {}
   for (const id of WAVE3_ORDER) {
     if (!wave3.agents[id]) wave3.agents[id] = createNarrativeAgent(id, [...WAVE3_INPUTS[id]])

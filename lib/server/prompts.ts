@@ -145,7 +145,7 @@ export function buildWave3Prompt(
   return `Entity: ${entity.name} (${entity.type})
 Step: ${agentLabel}
 
-Upstream outputs approved by the reviewer, to be used as the basis for this step:
+Upstream conversations approved by the reviewer, to be used as the basis for this step:
 
 ${approvedText}${providedText ? `\n\nAdditional input for this step:\n\n${providedText}` : ''}`
 }

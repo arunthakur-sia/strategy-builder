@@ -19,7 +19,7 @@ import {
   getAgentObj, agentLabel, isApproved, buildCitationMaps, hasVersion, canUnlock, wave1ApprovedCount, statusMeta, defaultKickoffMessage,
 } from '@/lib/wave1Client'
 import { wave2Sequence, wave2OptionsEnabled, wave2SwotBEnabled, isWave2AgentId, WAVE2_OPTIONAL } from '@/lib/wave2Shared'
-import { wave3Sequence, wave3DepIds, isWave3AgentId, dashboardApproved, WAVE3_DASHBOARD_LABEL, WAVE3_COLLECTION_FIELDS } from '@/lib/wave3Shared'
+import { wave3Sequence, wave3DepIds, isWave3AgentId, dashboardApproved, WAVE3_DASHBOARD_LABEL } from '@/lib/wave3Shared'
 
 function fmtScore(n: number | null | undefined): string {
   return n == null ? '—' : n.toFixed(1)
@@ -976,8 +976,8 @@ function FormulationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
 
 // ─── Wave 3 (Translation) ───────────────────────────────────────────────────────────────────────────────
 // Mirrors the Wave 3 functional flow diagram: 1. Strategy Map → 2. KPIs / Performance → 3. Initiatives
-// definition → 4. Initiatives prioritisation, with optional finance documents feeding 2 and optional functional & operations documents feeding 3 and 4,
-// and 5. the Strategy Visualisation / BI Dashboard generated from all of their conversations (plus V/M/V).
+// definition → 4. Initiatives prioritisation, with the pillar conversations + company documents also feeding 1-3,
+// and 5. the Strategy Visualisation / BI Dashboard generated from the conversations of 1-4.
 function wave3WaitingOn(entity: any, id: string): string[] {
   return wave3DepIds(id, entity.assessment).filter(d => !isApproved(entity, d)).map(d => agentLabel(entity, d))
 }
@@ -989,51 +989,6 @@ const DASHBOARD_PHRASES = [
   'Placing initiatives on the roadmap',
   'Validating the data model',
 ]
-
-/** One of the diagram's two optional "(collection)" inputs: uploads go into their own SiaGPT collection (created on
- *  first upload) which is attached to the consuming agents on every turn. */
-function CollectionUploadCard({ project, entity, kind, title, feeds, onChanged }: {
-  project: any; entity: any; kind: 'finance' | 'functional'; title: string; feeds: string; onChanged: () => Promise<void>
-}) {
-  const [busy, setBusy] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const collectionId: string = entity.assessment.wave3[WAVE3_COLLECTION_FIELDS[kind]] || ''
-  const docs: any[] = (entity.documents || []).filter((d: any) => d.type === `wave3_${kind}`)
-
-  async function upload(files: FileList | null) {
-    if (!files?.length) return
-    setBusy(true)
-    try {
-      await entityDocumentsApi.upload(project.id, entity.id, Array.from(files), `wave3_${kind}`, title, kind)
-      await onChanged()
-    } catch (e: any) { alert('Upload failed: ' + (e.response?.data?.error || e.message)) }
-    setBusy(false)
-    if (inputRef.current) inputRef.current.value = ''
-  }
-
-  return (
-    <div style={{ padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px dashed rgba(23,48,68,0.18)', background: 'rgba(69,85,105,0.03)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-        <div>
-          <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--sia-navy)' }}>{title} <span style={{ fontWeight: 400, color: 'var(--sia-medium-gray)' }}>(optional)</span></div>
-          <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginTop: '2px' }}>
-            Uploaded into its own collection and attached to {feeds}. Skip it to run without.
-          </div>
-        </div>
-        <input ref={inputRef} type="file" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg" onChange={e => upload(e.target.files)} />
-        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => inputRef.current?.click()}>
-          {busy ? <Loader2 size={11} className="spinner" /> : <Upload size={11} />} Upload
-        </button>
-      </div>
-      {docs.length > 0 && (
-        <div style={{ fontSize: '11.5px', color: 'var(--sia-cool-black)', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {docs.map(d => <div key={d.id}>• {d.name}</div>)}
-          {!collectionId && <div style={{ color: '#B45309' }}>No SiaGPT collection — documents are not attached.</div>}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function DashboardStep({ project, entity, onChanged }: { project: any; entity: any; onChanged: () => Promise<void> }) {
   const dash = entity.assessment.wave3.dashboard
@@ -1135,7 +1090,7 @@ function TranslationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
   project: any; entity: any; onOpen: (id: string) => void; onChanged: () => Promise<void>
   onQuickRun: (id: string) => void; runningIds: Set<string>
 }) {
-  const gateOpen = isApproved(entity, 'shiftAgenda')
+  const gateOpen = wave3DepIds('strategyMap', entity.assessment).every(id => isApproved(entity, id))
   const row = (id: string) => (
     <AgentRow projectId={project.id}
       key={id} entity={entity} id={id} onOpen={onOpen} onQuickRun={onQuickRun} running={runningIds.has(id)}
@@ -1147,20 +1102,18 @@ function TranslationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
     <>
       {!gateOpen && (
         <div style={{ fontSize: '12.5px', color: 'var(--sia-cool-black)', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', padding: '10px 12px', borderRadius: 'var(--radius)', marginBottom: '16px' }}>
-          Wave 3 starts once Wave 2 is complete — the Shift Agenda (and Strategic Options, if run) and V/M/V must be approved first. Approve them in the Formulation tab.
+          Wave 3 starts once Wave 2 is complete — the Strategic Direction, Strategic Options (if run), V/M/V and the Shift Agenda must be approved first. Approve them in the Formulation tab.
         </div>
       )}
 
       <div className="card fade-in" style={{ padding: '16px 18px', marginBottom: '16px' }}>
         <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--sia-navy)' }}>Translation layer</div>
         <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginBottom: '14px' }}>
-          Strategy Map (Shift Agenda, Strategic Options, V/M/V) → KPIs (baselines from the Wave 1 internal analysis, plus optional finance documents) → Initiatives → Prioritisation.
+          Strategy Map (Strategic Direction, Strategic Options, V/M/V, Shift Agenda) → KPIs → Initiatives → Prioritisation. The Strategy Map, KPIs and Initiatives also draw on the eight pillar conversations and the company documents; Prioritisation works from Initiatives alone.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {row('strategyMap')}
-          <CollectionUploadCard project={project} entity={entity} kind="finance" title="Finance documents" feeds="KPIs / Performance" onChanged={onChanged} />
           {row('kpis')}
-          <CollectionUploadCard project={project} entity={entity} kind="functional" title="Functional & operations input" feeds="Initiatives definition and Initiatives prioritisation" onChanged={onChanged} />
           {row('initiatives')}
           {row('prioritisation')}
         </div>

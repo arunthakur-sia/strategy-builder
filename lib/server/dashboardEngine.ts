@@ -9,7 +9,7 @@ import { validateDashboard, KPI_DIRECTIONS, INITIATIVE_TIERS, type DashboardData
 import { WAVE3_DASHBOARD_INPUTS, isWave3AgentId } from '../wave3Shared'
 
 // Step 5 of the Wave 3 flow diagram: "Strategy Visualisation / BI Dashboard". Not a SiaGPT agent — the full
-// conversations of V/M/V and the four Translation agents go to the report LLM, which returns ONE structured
+// conversations of the four Translation agents (and only those) go to the report LLM, which returns ONE structured
 // JSON document (the shared data model behind the strategy map, KPI scorecard, roadmap and export centre).
 
 const SYSTEM_PROMPT = `You are a senior strategy consultant at SIA Partners. You turn the working conversations between a reviewer and a set of AI analyst agents into the data model behind a strategy dashboard (strategy map, KPI scorecard, initiative roadmap).
@@ -27,7 +27,7 @@ Rules:
 JSON shape:
 {
   "title": string, "summary": string (3-4 sentences, plain executive summary of the strategy),
-  "vmv": { "vision": string, "mission": string, "values": string[] },
+  "vmv": { "vision": string, "mission": string, "values": string[] } (fill only what the conversations themselves restate — typically the Strategy Map conversation; otherwise leave empty and note it in "assumptions"),
   "perspectives": [{ "id": string, "name": string }],
   "themes": [{ "id": string, "name": string, "description": string }],
   "objectives": [{ "id": string, "title": string, "description": string, "themeId": string, "perspectiveId": string, "supports": string[] }],
@@ -47,7 +47,7 @@ export interface DashboardRunInput {
 }
 
 /** Snapshot of everything one dashboard run needs, taken inside the short "start" phase of the route so the long
- *  LLM call works off a frozen copy. Wave 3's four agents and V/M/V are all approved by the time this runs. */
+ *  LLM call works off a frozen copy. Wave 3's four agents are all approved by the time this runs. */
 export function prepareDashboardInput(entity: any, instruction: string): DashboardRunInput {
   const sources = WAVE3_DASHBOARD_INPUTS.map(id => {
     const agent = isWave3AgentId(id) ? getWave3Agent(entity, id) : getWave2Agent(entity, id)
@@ -77,7 +77,7 @@ function buildMessages(input: DashboardRunInput) {
     : ''
   const user = `Entity: ${input.entityName} (${input.entityType})
 
-Full conversations follow (V/M/V first, then the four Translation agents in order).
+Full conversations follow (the four Translation agents in order: Strategy Map, KPIs, Initiatives, Prioritisation).
 
 ${conversations}${revise}
 
