@@ -142,7 +142,7 @@ export default function LandingPage() {
               {[
                 ['8-Pillar Assessment Framework', 'AI-scored with evidence from your documents'],
                 ['Multi-Entity Parallel Assessment', 'Assess all holding company subsidiaries simultaneously'],
-                ['5 Export-Ready Deliverables', 'D1–D5 reports in easily exportable format'],
+                ['Export-Ready Deliverables', 'Reports in easily exportable format'],
               ].map(([title, desc]) => (
                 <div key={title} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                   <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--sia-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
