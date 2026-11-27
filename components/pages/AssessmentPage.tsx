@@ -976,7 +976,7 @@ function FormulationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
 
 // ─── Wave 3 (Translation) ───────────────────────────────────────────────────────────────────────────────
 // Mirrors the Wave 3 functional flow diagram: 1. Strategy Map → 2. KPIs / Performance → 3. Initiatives
-// definition → 4. Initiatives prioritisation, with the pillar conversations + company documents also feeding 1-3,
+// definition → 4. Initiatives prioritisation, with the pillar conversations + company documents also feeding 1-2 and the company documents alone feeding 3,
 // and 5. the Strategy Visualisation / BI Dashboard generated from the conversations of 1-4.
 function wave3WaitingOn(entity: any, id: string): string[] {
   return wave3DepIds(id, entity.assessment).filter(d => !isApproved(entity, d)).map(d => agentLabel(entity, d))
@@ -1109,7 +1109,7 @@ function TranslationWaveContent({ project, entity, onOpen, onChanged, onQuickRun
       <div className="card fade-in" style={{ padding: '16px 18px', marginBottom: '16px' }}>
         <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--sia-navy)' }}>Translation layer</div>
         <div style={{ fontSize: '11.5px', color: 'var(--sia-medium-gray)', marginBottom: '14px' }}>
-          Strategy Map (Strategic Direction, Strategic Options, V/M/V, Shift Agenda) → KPIs → Initiatives → Prioritisation. The Strategy Map, KPIs and Initiatives also draw on the eight pillar conversations and the company documents; Prioritisation works from Initiatives alone.
+          Strategy Map (Strategic Direction, Strategic Options, V/M/V, Shift Agenda) → KPIs → Initiatives → Prioritisation. The Strategy Map and KPIs also draw on the eight pillar conversations and the company documents; Initiatives draws on KPIs and the company documents only; Prioritisation works from Initiatives alone.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {row('strategyMap')}

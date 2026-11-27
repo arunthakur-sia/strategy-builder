@@ -7,7 +7,7 @@ import { approvedConversation as wave2ApprovedConversation } from './wave2Engine
 import { PILLAR_IDS } from './helpers'
 import { WAVE2_LABELS } from '../wave2Shared'
 import {
-  WAVE3_ORDER, WAVE3_LABELS, WAVE3_USES_GREEN_LINE,
+  WAVE3_ORDER, WAVE3_LABELS, WAVE3_USES_GREEN_LINE, WAVE3_USES_PILLAR_CONVERSATIONS,
   isWave3AgentId, wave3DepIds, downstreamStarted, recomputeWave3Locks,
 } from '../wave3Shared'
 
@@ -60,10 +60,10 @@ export async function runWave3Agent(
   }
 
   const approved = wave3DepIds(agentId, entity.assessment).map(id => ({ label: `${inputLabel(id)} — full conversation with the agent`, text: approvedInputText(entity, id) }))
-  // The "green line" (Strategy Map, KPIs, Initiatives): the eight pillar conversations plus the entity's company
-  // documents collection (the same one Waves 1 and 2 use). Prioritisation gets neither.
+  // The "green line": the entity's company documents collection (Strategy Map, KPIs, Initiatives — the same one
+  // Waves 1 and 2 use), plus the eight pillar conversations for Strategy Map and KPIs only. Prioritisation gets neither.
   const greenLine = !!WAVE3_USES_GREEN_LINE[agentId]
-  const provided = greenLine ? pillarConversationSections(entity) : []
+  const provided = WAVE3_USES_PILLAR_CONVERSATIONS[agentId] ? pillarConversationSections(entity) : []
   let prompt = buildWave3Prompt(entity, WAVE3_LABELS[agentId], approved, provided)
   const collectionIds = greenLine && entity.siagptCollectionId ? [entity.siagptCollectionId] : []
 
